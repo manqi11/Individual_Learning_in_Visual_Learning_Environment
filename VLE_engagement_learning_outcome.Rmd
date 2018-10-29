@@ -1,0 +1,75 @@
+---
+title: "VLE engagement and learning outcome"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+This analysis explores the relations between students' engagement with the virtual learning environment (VLE), students' demographic characteristics and learning outcome.  
+   
+###Data processing
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+library(dplyr)
+library(oulad)
+library(ggplot2)
+data(course)
+data(assessment)
+data(student)
+data(vle)
+data(student_assessment)
+data(student_vle)
+data(student_registration)
+student_vle_unique<- student_vle %>% group_by(code_module,code_presentation,id_student,id_site,date) %>% summarise(sum_click=sum(sum_click))
+rm(student_vle)
+#Get student-level info across multiple datasets
+tmaRatio<- assessment %>% filter(assessment_type!="Exam") %>% group_by(code_module,code_presentation) %>% summarise(tma=mean(assessment_type=="TMA"))
+
+moduleStudentClick<-student_vle_unique %>% group_by(code_module,code_presentation,id_student) %>% summarise(meanDailyClick=sum(sum_click)/n_distinct(date))
+mergedData<- merge(student,tmaRatio,by=c("code_module","code_presentation"))
+mergedData<- merge(mergedData,moduleStudentClick,by=c("code_module","code_presentation","id_student"))
+
+mergedData$code_module_category<-"Social sciences"
+mergedData$code_module_category[mergedData$code_module %in% c("CCC","DDD","EEE","FFF")]<-"STEM"
+#re-code final result and education level as ordered factor variables
+uniq_levels<-unique(mergedData$highest_education)
+mergedData$highest_education<-factor(mergedData$highest_education,levels=uniq_levels[c(5,2,3,1,4)],ordered=T)
+mergedData$final_result<-factor(mergedData$final_result,levels=c("Withdrawn","Fail","Pass","Distinction"),ordered = T)
+
+```
+
+###Mean daily click vs. final result  
+Students that pass the class or get distinction have higher mean daily click on the VLE compared to students that fail or withdraw. 
+```{r,warning=FALSE,message=FALSE,fig.width=10,fig.height=6}
+library(dplyr)
+library(ggplot2)
+mu<- mergedData %>% group_by(final_result) %>% summarise(meanClick=mean(log2(meanDailyClick)))
+ggplot(data=mergedData,aes(x=log2(meanDailyClick))) + geom_density(aes(color=final_result),alpha=0.3,size=1) + geom_vline(data=mu, aes(xintercept=meanClick, color=final_result),linetype="dashed")
+```
+
+###Mean daily click and final result  
+For STEM classes, young (<35) female students have lower mean daily clicks than young male students. The difference is not present in social sciences, and is much smaller between older female vs. male students in STEM classes.  
+```{r}
+ggplot(data=mergedData[mergedData$age_band!="55<=",],aes(x=log2(meanDailyClick))) + geom_density(aes(color=gender)) + facet_wrap(age_band~code_module_category)
+```
+
+###Number of days student interact with the VLE  and final result  
+For each student in each module presentation, calculate how many days it clicked the online learning material.  
+```{r}
+moduleStudentDailyClick<-student_vle_unique %>% group_by(code_module,code_presentation,id_student,date) %>% summarise(totalClick=sum(sum_click)) %>% summarise(daysClicked=n_distinct(date))
+mergedData<-merge(mergedData,moduleStudentDailyClick,by=c("code_module","code_presentation","id_student"))
+```
+Number of days students interact with the VLE is independent of mean daily clicks - no strong correlation between the two variables.    
+```{r}
+ggplot(data=mergedData,aes(x=log2(meanDailyClick),y=daysClicked)) + geom_hex()
+```
+Students that pass or get distinction engage with the VLE much more frequently throughout the class comapred to students that fail or withdraw. Dashed lines show the mean number of days clicked by each group.  
+```{r,fig.width=10,fig.height=6}
+mu<- mergedData %>% group_by(final_result) %>% summarise(meanDaysClick=median(daysClicked))
+ggplot(data=mergedData,aes(x=daysClicked)) + geom_density(aes(color=final_result),alpha=0.3,size=1) + geom_vline(data=mu, aes(xintercept=meanDaysClick, color=final_result),linetype="dashed")
+```
+
+Female and male students across age groups engage with the VLE at similar frequency throughout both social science and STEM classes. This result is different from mean daily clicks, where young (<35) female have lower mean daily clicks in STEM classes.   
+```{r}
+ggplot(data=mergedData[mergedData$age_band!="55<=",],aes(x=log2(daysClicked))) + geom_density(aes(color=gender)) + facet_wrap(age_band~code_module_category)
+```

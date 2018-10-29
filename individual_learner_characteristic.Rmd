@@ -1,0 +1,71 @@
+---
+title: "Individual learner’s characteristic"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Data processing
+```{r,cache=TRUE,warning=FALSE,message=FALSE}
+library(dplyr)
+library(oulad)
+library(ggplot2)
+data(course)
+data(assessment)
+data(student)
+data(vle)
+data(student_assessment)
+data(student_vle)
+data(student_registration)
+student_vle_unique<- student_vle %>% group_by(code_module,code_presentation,id_student,id_site,date) %>% summarise(sum_click=sum(sum_click))
+rm(student_vle)
+#Get student-level info across multiple datasets
+tmaRatio<- assessment %>% filter(assessment_type!="Exam") %>% group_by(code_module,code_presentation) %>% summarise(tma=mean(assessment_type=="TMA"))
+
+moduleStudentClick<-student_vle_unique %>% group_by(code_module,code_presentation,id_student) %>% summarise(meanDailyClick=sum(sum_click)/n_distinct(date))
+mergedData<- merge(student,tmaRatio,by=c("code_module","code_presentation"))
+mergedData<- merge(mergedData,moduleStudentClick,by=c("code_module","code_presentation","id_student"))
+
+mergedData$code_module_category<-"Social sciences"
+mergedData$code_module_category[mergedData$code_module %in% c("CCC","DDD","EEE","FFF")]<-"STEM"
+#re-code final result and education level as ordered factor variables
+uniq_levels<-unique(mergedData$highest_education)
+mergedData$highest_education<-factor(mergedData$highest_education,levels=uniq_levels[c(5,2,3,1,4)],ordered=T)
+mergedData$final_result<-factor(mergedData$final_result,levels=c("Withdrawn","Fail","Pass","Distinction"),ordered = T)
+
+```
+
+###Sex vs. final result###
+Female students tend to do better in social science classes, male students do better in STEM classes. 
+```{r,warning=FALSE,message=FALSE}
+library(plotly)
+library(tidyr) 
+library(dplyr)
+figure1 <- plot_ly(mergedData, x = ~final_result, color = ~gender) %>% add_histogram() %>% layout(title = 'Gender and Learning outcome',xaxis = list(type='category',title='Learning outcome'), yaxis=list (title='Total number of learners'),range = c(0,30000))
+figure1
+```
+
+###Age vs. final result###
+Younger students (<35) tend to do better, in both social science and STEM classes. 
+```{r}
+figure2 <- plot_ly(mergedData, x = ~final_result, color = ~age_band) %>% add_histogram() %>% layout(title = 'Age and Learning outcome',xaxis = list(type='category',title='Learning outcome'), yaxis=list (title='Total number of learners'),range = c(0,30000))
+figure2
+```
+
+###Education level and final result###
+It seems that better prior education levels are associated with better class outcome, especially STEM class outcome. In heat map, red means we observe more students with a particular combination of education level and final result than expected by chance.    
+```{r}
+figure3 <- plot_ly(mergedData, x = ~final_result, color = ~highest_education) %>% add_histogram() %>% layout(title = 'Education Level and Learning outcome',xaxis = list(type='category',title='Learning outcome'), yaxis=list (title='Total number of learners'),range = c(0,30000))
+figure3
+```
+
+```{r,message=FALSE,warning=FALSE}
+chisqResult<-chisq.test(mergedData$final_result,mergedData$highest_education)
+chisqResult
+ratioMat<-as.data.frame.matrix(chisqResult$observed/chisqResult$expected)
+library(ComplexHeatmap)
+library(circlize)
+Heatmap(ratioMat,name="Ratio",cluster_rows = F,cluster_columns = F,col = colorRamp2(c(0, 1, 2.9), c("blue", "white", "red")))
+```
